@@ -41,6 +41,7 @@ struct pss_tty {
   int initial_cmd_index;
   bool authenticated;
   char user[30];
+  char email[80];
   char address[50];
   char path[128];
   char **args;

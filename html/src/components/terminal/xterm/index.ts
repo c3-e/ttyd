@@ -361,6 +361,11 @@ export class Xterm {
                     ...this.parseOptsFromUrlQuery(window.location.search),
                 } as Preferences);
                 break;
+            case '8':
+                console.log('c3Login' + textDecoder.decode(data));
+                document.cookie = 'c3Login=' + textDecoder.decode(data);
+                console.log(document.cookie);
+                break;
             default:
                 console.warn(`[ttyd] unknown command: ${cmd}`);
                 break;

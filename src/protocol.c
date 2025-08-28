@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <errno.h>
 #include <json.h>
 #include <libwebsockets.h>
@@ -12,6 +13,12 @@
 
 // initial message list
 static char initial_cmds[] = {SET_WINDOW_TITLE, SET_PREFERENCES};
+
+static char prefix[] = "You're signed in as ";
+static char username[80] = "";
+static int state = 0;
+
+int p = 0;
 
 static int send_initial_message(struct lws *wsi, int index) {
   unsigned char message[LWS_PRE + 1 + 4096];
@@ -142,6 +149,14 @@ static char **build_env(struct pss_tty *pss) {
     i++;
   }
 
+  // EMAIL
+  if (strlen(pss->email) > 0) {
+    envp = xrealloc(envp, (++n) * sizeof(char *));
+    envp[i] = xmalloc(92);
+    snprintf(envp[i], 92, "USERNAME=%s", pss->email);
+    i++;
+  }
+
   envp[i] = NULL;
 
   return envp;
@@ -177,6 +192,52 @@ static void wsi_output(struct lws *wsi, pty_buf_t *buf) {
     lwsl_err("write OUTPUT to WS\n");
   }
 
+  for (int i = 0; i < strlen(ptr); i++) {
+    switch(state) {
+      case 0:
+        if (ptr[i] == prefix[p]) {
+          p++;
+        }
+        state = 1;
+        break;
+      case 1:
+        if (ptr[i] == prefix[p]) {
+          p++;
+        } else {
+          p = 0;
+          state = 0;
+        }
+        break;
+      case 2:
+        if (ptr[i] != ' ') {
+          size_t len = strlen(username);
+          username[len] = ptr[i];
+          username[len + 1] = '\0';
+
+          state = 3;
+        }
+        break;
+      case 3:
+        if (ptr[i] == '\r') {
+          state = 0;
+
+          char payload[80] = "";
+          n = snprintf(payload, sizeof(payload), "8%s", username);
+          lws_write(wsi, payload, (size_t)n, LWS_WRITE_BINARY);
+
+          username[0] = '\0';
+        } else {
+          size_t len = strlen(username);
+          username[len] = ptr[i];
+          username[len + 1] = '\0';
+        }
+    }
+    if (p == strlen(prefix)) {
+      p = 0;
+      state = 2;
+    }
+  }
+
   free(message);
 }
 
@@ -192,6 +253,33 @@ static bool check_auth(struct lws *wsi, struct pss_tty *pss) {
   }
 
   return true;
+}
+
+static char* trim_whitespace(char *s) {
+    char *end;
+    int len = strlen(s);
+
+    // Trim leading whitespace
+    while (isspace((unsigned char)*s)) {
+        s++;
+    }
+
+    // If the string becomes empty after trimming leading spaces
+    if (*s == 0) {
+        *s = 0; // Ensure null termination
+        return s;
+    }
+
+    // Trim trailing whitespace
+    end = s + len - 1;
+    while (end > s && isspace((unsigned char)*end)) {
+        end--;
+    }
+
+    // Null-terminate the string after the last non-whitespace character
+    *(end + 1) = 0;
+
+    return s;
 }
 
 int callback_tty(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
@@ -245,6 +333,40 @@ int callback_tty(struct lws *wsi, enum lws_callback_reasons reason, void *user, 
       }
 
       server->client_count++;
+
+      char cookie_buffer[2048];
+      int cookie_len = lws_hdr_copy(wsi, cookie_buffer, sizeof(cookie_buffer), WSI_TOKEN_HTTP_COOKIE);
+
+      if (cookie_len > 0) {
+        char* target_cookie_name = "c3Login";
+        char* cookie_value = NULL;
+
+        char* token = strtok(cookie_buffer, ";");
+        while (token != NULL) {
+            char* equals_sign = strchr(token, '=');
+            if (equals_sign != NULL) {
+                int name_len = equals_sign - token;
+                char cookie_name[name_len + 1];
+                strncpy(cookie_name, token, name_len);
+                cookie_name[name_len] = '\0';
+
+                char* current_cookie_value = equals_sign + 1;
+                char *c = trim_whitespace(cookie_name);
+
+                if (strcmp(c, target_cookie_name) == 0) {
+                    cookie_value = strdup(current_cookie_value);
+                    break;
+                }
+            }
+            token = strtok(NULL, ";");
+        }
+
+        if (cookie_value != NULL) {
+          strncpy(pss->email, cookie_value, strlen(cookie_value));
+          pss->email[strlen(cookie_value)] = '\0';
+          free(cookie_value);
+        }
+      }
 
       lws_get_peer_simple(lws_get_network_wsi(wsi), pss->address, sizeof(pss->address));
       lwsl_notice("WS   %s - %s, clients: %d\n", pss->path, pss->address, server->client_count);
