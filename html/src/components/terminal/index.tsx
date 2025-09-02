@@ -17,6 +17,9 @@ export class Terminal extends Component<Props, State> {
     private container: HTMLElement;
     private xterm: Xterm;
 
+    // this does not affect visual state
+    private isKf: boolean;
+
     constructor(props: Props) {
         super();
         this.xterm = new Xterm(props, this.showModal);
@@ -46,14 +49,25 @@ export class Terminal extends Component<Props, State> {
     }
 
     @bind
-    showModal() {
+    showModal(isKf?: boolean) {
+        if (isKf) {
+            this.isKf = isKf;
+        }
+
         this.setState({ modal: true });
     }
 
     @bind
     sendFile(event: Event) {
-        this.setState({ modal: false });
-        const files = (event.target as HTMLInputElement).files;
-        if (files) this.xterm.sendFile(files);
+        if (this.isKf) {
+            this.isKf = false;
+            this.setState({ modal: false });
+            const files = (event.target as HTMLInputElement).files;
+            if (files) this.xterm.sendCredFile(files);
+        } else {
+            this.setState({ modal: false });
+            const files = (event.target as HTMLInputElement).files;
+            if (files) this.xterm.sendFile(files);
+        }
     }
 }

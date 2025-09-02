@@ -102,11 +102,13 @@ export class Xterm {
     private doReconnect = true;
     private closeOnDisconnect = false;
 
+    private kubeConfigIntervalId: NodeJS.Timeout;
+
     private writeFunc = (data: ArrayBuffer) => this.writeData(new Uint8Array(data));
 
     constructor(
         private options: XtermOptions,
-        private sendCb: () => void
+        private sendCb: (isKf?: boolean) => void
     ) {}
 
     dispose() {
@@ -125,6 +127,41 @@ export class Xterm {
     @bind
     public sendFile(files: FileList) {
         this.zmodemAddon?.sendFile(files);
+    }
+
+    @bind
+    public sendCredFile(files: FileList) {
+        if (files) {
+            this.terminal.options.disableStdin = true;
+
+            let width = 1;
+            this.terminal.options.cursorStyle = 'bar';
+            this.terminal.options.cursorWidth = width;
+            this.kubeConfigIntervalId = setInterval(() => {
+                width = ((width + 1) % 79) + 1;
+                this.terminal.options.cursorWidth = width;
+            }, 100);
+
+            const reader = new FileReader();
+            reader.onload = e => {
+                const fileContent = e.target?.result as string;
+                const base64String: string = btoa(fileContent);
+                this.sendData('\t' + base64String + '\r');
+
+                // stop animation even if login ack breaks
+                setTimeout(this.stopKubeConfigUploadLoop, 3000);
+            };
+
+            reader.readAsText(files[0]);
+            this.terminal.focus();
+        }
+    }
+
+    @bind
+    public stopKubeConfigUploadLoop() {
+        this.terminal.options.disableStdin = false;
+        clearInterval(this.kubeConfigIntervalId);
+        this.terminal.options.cursorStyle = 'block';
     }
 
     @bind
@@ -166,6 +203,19 @@ export class Xterm {
         terminal.loadAddon(webLinksAddon);
 
         terminal.open(parent);
+
+        // Attach ctrl-shift-K for uploding password file - kubeconfig
+        terminal.attachCustomKeyEventHandler(event => {
+            if (event.ctrlKey && event.shiftKey && event.key === 'K') {
+                // only sendData works e.g. this.sendData('env\r');
+                this.sendCb(true);
+
+                return false;
+            }
+
+            return true;
+        });
+
         fitAddon.fit();
     }
 
@@ -362,9 +412,14 @@ export class Xterm {
                 } as Preferences);
                 break;
             case '8':
-                console.log('c3Login' + textDecoder.decode(data));
                 document.cookie = 'c3Login=' + textDecoder.decode(data);
                 console.log(document.cookie);
+
+                this.stopKubeConfigUploadLoop();
+                break;
+            case '9':
+                console.log('Invalid username/password');
+                this.stopKubeConfigUploadLoop();
                 break;
             default:
                 console.warn(`[ttyd] unknown command: ${cmd}`);

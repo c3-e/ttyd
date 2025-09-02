@@ -14,11 +14,14 @@
 // initial message list
 static char initial_cmds[] = {SET_WINDOW_TITLE, SET_PREFERENCES};
 
-static char prefix[] = "You're signed in as ";
+static char login_prefix[] = "You're signed in as ";
 static char username[80] = "";
-static int state = 0;
-
+static int login_state = 0;
 int p = 0;
+
+static char ic_msg[] = "Invalid username/password";
+static int ic_msg_state = 0;
+int q = 0;
 
 static int send_initial_message(struct lws *wsi, int index) {
   unsigned char message[LWS_PRE + 1 + 4096];
@@ -193,19 +196,19 @@ static void wsi_output(struct lws *wsi, pty_buf_t *buf) {
   }
 
   for (int i = 0; i < strlen(ptr); i++) {
-    switch(state) {
+    switch(login_state) {
       case 0:
-        if (ptr[i] == prefix[p]) {
+        if (ptr[i] == login_prefix[p]) {
           p++;
         }
-        state = 1;
+        login_state = 1;
         break;
       case 1:
-        if (ptr[i] == prefix[p]) {
+        if (ptr[i] == login_prefix[p]) {
           p++;
         } else {
           p = 0;
-          state = 0;
+          login_state = 0;
         }
         break;
       case 2:
@@ -214,12 +217,12 @@ static void wsi_output(struct lws *wsi, pty_buf_t *buf) {
           username[len] = ptr[i];
           username[len + 1] = '\0';
 
-          state = 3;
+          login_state = 3;
         }
         break;
       case 3:
         if (ptr[i] == '\r') {
-          state = 0;
+          login_state = 0;
 
           char payload[80] = "";
           n = snprintf(payload, sizeof(payload), "8%s", username);
@@ -232,9 +235,35 @@ static void wsi_output(struct lws *wsi, pty_buf_t *buf) {
           username[len + 1] = '\0';
         }
     }
-    if (p == strlen(prefix)) {
+    if (p == strlen(login_prefix)) {
       p = 0;
-      state = 2;
+      login_state = 2;
+    }
+  }
+
+  for (int i = 0; i < strlen(ptr); i++) {
+    switch(ic_msg_state) {
+      case 0:
+        if (ptr[i] == ic_msg[q]) {
+          q++;
+        }
+        ic_msg_state = 1;
+        break;
+      case 1:
+        if (ptr[i] == ic_msg[q]) {
+          q++;
+          if (q == strlen(ic_msg)) {
+            q = 0;
+            ic_msg_state = 0;
+
+            char payload[80] = "";
+            n = snprintf(payload, sizeof(payload), "9");
+            lws_write(wsi, payload, (size_t)n, LWS_WRITE_BINARY);
+          }
+        } else {
+          q = 0;
+          ic_msg_state = 0;
+        }
     }
   }
 
