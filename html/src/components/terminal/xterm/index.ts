@@ -29,6 +29,9 @@ enum Command {
     SET_WINDOW_TITLE = '1',
     SET_PREFERENCES = '2',
 
+    SET_USERNAME = '8',
+    INVALID_LOGIN = '9',
+
     // client side
     INPUT = '0',
     RESIZE_TERMINAL = '1',
@@ -411,13 +414,13 @@ export class Xterm {
                     ...this.parseOptsFromUrlQuery(window.location.search),
                 } as Preferences);
                 break;
-            case '8':
+            case Command.SET_USERNAME:
                 document.cookie = 'c3Login=' + textDecoder.decode(data);
                 console.log(document.cookie);
 
                 this.stopKubeConfigUploadLoop();
                 break;
-            case '9':
+            case Command.INVALID_LOGIN:
                 console.log('Invalid username/password');
                 this.stopKubeConfigUploadLoop();
                 break;
