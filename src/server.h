@@ -42,6 +42,7 @@ struct pss_tty {
   bool authenticated;
   char user[30];
   char email[80];
+  char http_host[255];
   char address[50];
   char path[128];
   char **args;

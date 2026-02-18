@@ -160,6 +160,14 @@ static char **build_env(struct pss_tty *pss) {
     i++;
   }
 
+  // HTTP_HOST
+  if (strlen(pss->http_host) > 0) {
+    envp = xrealloc(envp, (++n) * sizeof(char *));
+    envp[i] = xmalloc(298);
+    snprintf(envp[i], 298, "HTTP_HOST=%s", pss->http_host);
+    i++;
+  }
+
   envp[i] = NULL;
 
   return envp;
@@ -394,6 +402,14 @@ int callback_tty(struct lws *wsi, enum lws_callback_reasons reason, void *user, 
           strncpy(pss->email, cookie_value, strlen(cookie_value));
           pss->email[strlen(cookie_value)] = '\0';
           free(cookie_value);
+        }
+      }
+
+      char http_host[256];
+      if (lws_hdr_copy(wsi, http_host, sizeof(http_host), WSI_TOKEN_HOST) > 0) {
+        if (http_host != NULL) {
+          strncpy(pss->http_host, http_host, strlen(http_host));
+          pss->http_host[strlen(http_host)] = '\0';
         }
       }
 
